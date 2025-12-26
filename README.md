@@ -1,110 +1,211 @@
-# FHEVM Hardhat Template
+# NullOdds
 
-A Hardhat-based template for developing Fully Homomorphic Encryption (FHE) enabled Solidity smart contracts using the
-FHEVM protocol by Zama.
+NullOdds is a two-player wager game built on Zama FHEVM. Players keep balances and scores encrypted on-chain, submit encrypted bets, and earn points based on who wagered more in each round.
 
-## Quick Start
+## One-Minute Overview
 
-For detailed instructions see:
-[FHEVM Hardhat Quick Start Tutorial](https://docs.zama.ai/protocol/solidity-guides/getting-started/quick-start-tutorial)
+- **Core idea**: A private betting duel where balances and scores never appear in plaintext on-chain.
+- **Game size**: Exactly 2 players per game.
+- **Rounds**: Each round both players submit a wager; the higher encrypted bet earns 1 point.
+- **Balances**: Every player starts with 10,000 coins, and each wager reduces the encrypted balance.
+- **Privacy**: All sensitive values are encrypted using FHE and only the player (and contract logic) can decrypt.
 
-### Prerequisites
+## Problem This Project Solves
 
-- **Node.js**: Version 20 or higher
-- **npm or yarn/pnpm**: Package manager
+Public blockchains reveal amounts and scores, which can lead to front‑running, privacy loss, and reduced player trust. NullOdds addresses this by:
 
-### Installation
+- Keeping **balances**, **bets**, and **scores** encrypted end-to-end.
+- Allowing **provably correct** on-chain game resolution without exposing private values.
+- Ensuring players can **trust the rules** while keeping strategy and wealth private.
 
-1. **Install dependencies**
+## Advantages
 
-   ```bash
-   npm install
-   ```
+- **Full privacy for key game state**: balances, bets, and scores are FHE encrypted.
+- **Trustless enforcement**: no operator can manipulate outcomes or read private data.
+- **Deterministic fairness**: encrypted comparison determines the round winner consistently.
+- **Simple, auditable rules**: the contract logic is small and easy to reason about.
+- **Player‑controlled data access**: ACLs allow only the rightful player to decrypt their data.
 
-2. **Set up environment variables**
+## Tech Stack
 
-   ```bash
-   npx hardhat vars set MNEMONIC
+**Smart Contracts**
+- Solidity + Hardhat
+- Zama FHEVM (FHE-enabled `euint64`, `euint32`)
+- Hardhat Deploy
 
-   # Set your Infura API key for network access
-   npx hardhat vars set INFURA_API_KEY
+**Frontend**
+- React + Vite (TypeScript)
+- viem for reads
+- ethers for writes
+- RainbowKit/Wagmi for wallet connectivity
+- Zama relayer integration for encrypted inputs
 
-   # Optional: Set Etherscan API key for contract verification
-   npx hardhat vars set ETHERSCAN_API_KEY
-   ```
+**Tooling**
+- npm
+- TypeChain
+- Etherscan verification (optional)
 
-3. **Compile and test**
+## How the Game Works
 
-   ```bash
-   npm run compile
-   npm run test
-   ```
+### Game Lifecycle
+1. **Create a game**: Player 1 opens a new game.
+2. **Join**: Player 2 joins an open game.
+3. **Start**: Either player starts once two players are present.
+4. **Submit bets**: Each player submits an encrypted bet for the round.
+5. **Resolve**: After both bets are submitted:
+   - Each balance is reduced by the bet amount (clamped if over balance).
+   - The higher bet earns **+1 score**.
+6. **Repeat**: Round count increases and players continue.
 
-4. **Deploy to local network**
+### Balance Rules
+- Each player starts with **10,000 coins**.
+- A bet **cannot reduce a balance below 0**; if a bet exceeds the balance, it is treated as 0.
+- Balance and score are encrypted values stored on-chain.
 
-   ```bash
-   # Start a local FHEVM-ready node
-   npx hardhat node
-   # Deploy to local network
-   npx hardhat deploy --network localhost
-   ```
+### Scoring Rules
+- The **higher bet** wins the round and gains **1 score point**.
+- A tie yields **no score change**.
 
-5. **Deploy to Sepolia Testnet**
+## Smart Contract Details
 
-   ```bash
-   # Deploy to Sepolia
-   npx hardhat deploy --network sepolia
-   # Verify contract on Etherscan
-   npx hardhat verify --network sepolia <CONTRACT_ADDRESS>
-   ```
+**Main Contract**: `contracts/NullOddsGame.sol`
 
-6. **Test on Sepolia Testnet**
+Key public data (`GamePublic`):
+- `player1`, `player2`
+- `started`
+- `round`
+- submission flags
 
-   ```bash
-   # Once deployed, you can run a simple test on Sepolia.
-   npx hardhat test --network sepolia
-   ```
+Encrypted state:
+- `balances[gameId][player]` → `euint64`
+- `scores[gameId][player]` → `euint32`
+- `bet1`, `bet2` → `euint64`
 
-## 📁 Project Structure
+Key events:
+- `GameCreated`, `GameJoined`, `GameStarted`
+- `BetSubmitted`, `RoundResolved`
+
+Important behaviors:
+- **Round resolution happens automatically** after both bets are submitted.
+- **View methods never depend on `msg.sender`**, ensuring ACL-based decryption behavior.
+
+## Encryption and Privacy Model
+
+- Players generate encrypted bets using the FHEVM client.
+- Bets are submitted as `externalEuint64` plus a Zama input proof.
+- The contract decrypts and compares encrypted values inside the FHEVM runtime.
+- Balances and scores are re-encrypted and ACL‑authorized to the player.
+
+## Frontend Architecture
+
+The frontend consumes contract ABI and address generated by Hardhat deployment:
+
+- **ABI source**: `deployments/<network>/NullOddsGame.json`
+- **Synced output**: `src/src/config/contracts.ts` + `src/src/config/deployed.ts`
+
+Reads:
+- `viem` for viewing game state and encrypted values
+
+Writes:
+- `ethers` for transactions and wallet signatures
+
+**No frontend environment variables are required.**
+
+## Project Structure
 
 ```
-fhevm-hardhat-template/
-├── contracts/           # Smart contract source files
-│   └── FHECounter.sol   # Example FHE counter contract
-├── deploy/              # Deployment scripts
-├── tasks/               # Hardhat custom tasks
-├── test/                # Test files
-├── hardhat.config.ts    # Hardhat configuration
-└── package.json         # Dependencies and scripts
+contracts/                # Smart contracts
+deploy/                   # Hardhat deploy scripts
+tasks/                    # Custom Hardhat tasks
+test/                     # Contract tests
+scripts/                  # Utility scripts (ABI sync)
+deployments/              # Deployment artifacts per network
+src/                      # React + Vite frontend
+hardhat.config.ts         # Hardhat configuration
 ```
 
-## 📜 Available Scripts
+## Local Development
 
-| Script             | Description              |
-| ------------------ | ------------------------ |
-| `npm run compile`  | Compile all contracts    |
-| `npm run test`     | Run all tests            |
-| `npm run coverage` | Generate coverage report |
-| `npm run lint`     | Run linting checks       |
-| `npm run clean`    | Clean build artifacts    |
+### 1) Install dependencies
+```bash
+npm install
+```
 
-## 📚 Documentation
+### 2) Compile
+```bash
+npm run compile
+```
 
-- [FHEVM Documentation](https://docs.zama.ai/fhevm)
-- [FHEVM Hardhat Setup Guide](https://docs.zama.ai/protocol/solidity-guides/getting-started/setup)
-- [FHEVM Testing Guide](https://docs.zama.ai/protocol/solidity-guides/development-guide/hardhat/write_test)
-- [FHEVM Hardhat Plugin](https://docs.zama.ai/protocol/solidity-guides/development-guide/hardhat)
+### 3) Run tests (local FHEVM mock)
+```bash
+npm run test
+```
 
-## 📄 License
+### 4) Local deployment (optional)
+```bash
+npx hardhat node
+npx hardhat deploy --network localhost
+```
 
-This project is licensed under the BSD-3-Clause-Clear License. See the [LICENSE](LICENSE) file for details.
+> The frontend is designed for real networks (e.g., Sepolia). Local nodes are mainly for contract tests and debugging.
 
-## 🆘 Support
+## Sepolia Deployment
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/zama-ai/fhevm/issues)
-- **Documentation**: [FHEVM Docs](https://docs.zama.ai)
-- **Community**: [Zama Discord](https://discord.gg/zama)
+### Environment setup
+Create a root `.env` with:
+- `PRIVATE_KEY` (no mnemonic)
+- `INFURA_API_KEY`
+- `ETHERSCAN_API_KEY` (optional)
 
----
+### Deploy
+```bash
+npx hardhat deploy --network sepolia
+```
 
-**Built with ❤️ by the Zama team**
+### Sync ABI + address for frontend
+```bash
+node scripts/sync-frontend-contracts.mjs sepolia
+```
+
+### Verify (optional)
+```bash
+npx hardhat verify --network sepolia <CONTRACT_ADDRESS>
+```
+
+## Testing Strategy
+
+- **Unit tests** validate game lifecycle, encrypted balances, and score resolution.
+- **Edge case coverage** includes oversized bets being clamped.
+- **Sepolia tests** can be run for integration checks after deployment.
+
+## Security and Privacy Considerations
+
+- This project relies on Zama FHEVM security assumptions.
+- Encrypted values must only be decrypted by authorized users.
+- Transactions remain public, but **amounts and scores stay private**.
+- Wallet keys remain fully under player control.
+
+## Limitations
+
+- Only two players per game.
+- No matchmaking fee or escrow logic beyond in‑contract balances.
+- No off-chain matchmaking or ranking system (by design).
+
+## Future Roadmap
+
+- Add game expiration and cleanup for inactive games.
+- Support multiple concurrent game types (fixed wager, capped wager, etc.).
+- Introduce tournament mode with encrypted leaderboard aggregation.
+- Add spectator-safe analytics using aggregate encrypted stats.
+- Add optional NFT badges for high score streaks (non-sensitive).
+
+## Useful References
+
+- Zama FHEVM docs: https://docs.zama.ai/fhevm
+- Hardhat Deploy: https://github.com/wighawag/hardhat-deploy
+- viem: https://viem.sh
+- ethers: https://docs.ethers.org
+
+## License
+
+BSD-3-Clause-Clear. See `LICENSE`.
